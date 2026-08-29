@@ -1,4 +1,4 @@
-# search-replace.nvim
+# search&replace.nvim
 
 Project-wide, occurrence-by-occurrence search and replace with Vim regex and
 `:substitute` semantics in Telescope. Search and replacement stay visible in
@@ -28,7 +28,7 @@ require("search_replace").setup({
     i = {
       replace_current = "<CR>",
       toggle_selection = "<Tab>",
-      replace_selected_or_all = "<C-r>",
+      replace_selected_or_all = "<C-R>",
     },
   },
 })
@@ -64,3 +64,8 @@ and are never automatically written.
 
 Run domain tests with `make test`. Telescope UI behavior is best checked using
 the acceptance workflow in the project specification.
+
+## TODO
+- Multi line patterns
+- Same line occurences
+- `<Tab>` selected diff preview

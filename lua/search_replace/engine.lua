@@ -26,7 +26,7 @@ function M.find_matches(pattern, line)
     elseif end_byte == #line then
       break
     else
-      start = vim.str_byteindex(line, vim.str_utfindex(line, end_byte) + 1)
+      start = vim.fn.byteidx(line, vim.fn.charidx(line, end_byte) + 1)
     end
   end
   return out
@@ -37,7 +37,7 @@ local function byte_columns(line, last)
   while byte <= last do
     columns[#columns + 1] = byte
     if byte == #line then break end
-    byte = vim.str_byteindex(line, vim.str_utfindex(line, byte) + 1)
+    byte = vim.fn.byteidx(line, vim.fn.charidx(line, byte) + 1)
   end
   return columns
 end

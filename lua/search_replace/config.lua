@@ -8,7 +8,7 @@ M.defaults = {
     i = {
       replace_current = "<CR>",
       toggle_selection = "<Tab>",
-      replace_selected_or_all = "<C-r>",
+      replace_selected_or_all = "<C-R>",
     },
   },
 }
