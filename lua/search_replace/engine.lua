@@ -63,7 +63,7 @@ local function at_column(pattern, column)
 end
 
 -- Native substitute is the single source of truth for preview and application.
-function M.compute(pattern, replacement, occurrence, line)
+function M.compute(pattern, replacement, occurrence, line, global)
   if line ~= occurrence.original_text then return nil, "stale line" end
   local anchored
   for _, raw_start in ipairs(byte_columns(line, occurrence.start_byte)) do
@@ -75,8 +75,11 @@ function M.compute(pattern, replacement, occurrence, line)
     end
   end
   if not anchored then return nil, "stale match" end
-  local ok, new_line = pcall(vim.fn.substitute, line, anchored, replacement, "")
+  local ok, new_line = pcall(vim.fn.substitute, line, global and pattern or anchored, replacement, global and "g" or "")
   if not ok then return nil, tostring(new_line) end
+  if global then
+    return { start_byte = 0, end_byte = #line, old_text = line, new_text = new_line, old_line = line, new_line = new_line }
+  end
   local suffix_len = #line - occurrence.end_byte
   return {
     start_byte = occurrence.start_byte,

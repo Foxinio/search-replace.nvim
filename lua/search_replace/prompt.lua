@@ -1,85 +1,64 @@
 local M = {}
-local separator = "  │  "
 
-local function raw(picker)
-  return picker:_get_prompt()
+local function valid_delimiter(char)
+  return #char == 1 and not char:match("[%w\\\"|]")
 end
 
-local function set_raw(picker, state)
-  state.prompt_changing = true
-  picker:set_prompt(state.search_pattern .. separator .. state.replacement)
-  vim.schedule(function() state.prompt_changing = false end)
+local function segment(text, delimiter, start)
+  local out, slashes = {}, 0
+  for index = start, #text do
+    local char = text:sub(index, index)
+    if char == delimiter then
+      if slashes % 2 == 0 then return table.concat(out), index + 1 end
+      out[#out] = nil
+    end
+    out[#out + 1] = char
+    slashes = char == "\\" and slashes + 1 or 0
+  end
+  return table.concat(out)
+end
+
+function M.parse(text)
+  local state = { pattern = "", replacement = nil, flags = { global = false }, mode = "idle", parse_error = nil }
+  if text == "" then return state end
+  local delimiter = text:sub(1, 1)
+  if not valid_delimiter(delimiter) then
+    state.parse_error = "invalid delimiter"
+    return state
+  end
+  state.mode = "search"
+  local pattern, next_index = segment(text, delimiter, 2)
+  state.pattern = pattern
+  if not next_index then return state end
+  state.mode = "replace"
+  state.replacement, next_index = segment(text, delimiter, next_index)
+  if state.replacement:sub(1, 2) == [[\=]] then
+    state.parse_error = [[\= replacement expressions are not supported]]
+  end
+  if next_index then
+    local flags = text:sub(next_index)
+    if flags == "g" then state.flags.global = true
+    elseif flags ~= "" then state.parse_error = "only the g flag is supported" end
+  end
+  return state
 end
 
 function M.attach(prompt_bufnr, state, changed)
   local picker = require("telescope.actions.state").get_current_picker(prompt_bufnr)
-  local prefix = picker.prompt_prefix
-
   local function sync()
-    if state.prompt_changing or not vim.api.nvim_buf_is_valid(prompt_bufnr) then return end
-    local text = raw(picker)
-    local split = text:find(separator, 1, true)
-    if not split then return set_raw(picker, state) end
-    local search, replacement = text:sub(1, split - 1), text:sub(split + #separator)
-    local search_changed = search ~= state.search_pattern
-    local replacement_changed = replacement ~= state.replacement
-    state.search_pattern, state.replacement = search, replacement
-    if search_changed or replacement_changed then changed(search_changed, replacement_changed) end
+    if not vim.api.nvim_buf_is_valid(prompt_bufnr) then return end
+    local parsed = M.parse(picker:_get_prompt())
+    local pattern_changed = parsed.pattern ~= state.pattern
+    local preview_changed = pattern_changed
+      or parsed.replacement ~= state.replacement
+      or parsed.mode ~= state.mode
+      or parsed.flags.global ~= state.flags.global
+      or parsed.parse_error ~= state.parse_error
+    for key, value in pairs(parsed) do state[key] = value end
+    if preview_changed then changed(pattern_changed) end
   end
-
-  vim.api.nvim_buf_attach(prompt_bufnr, false, {
-    on_lines = function()
-      vim.schedule(sync)
-    end,
-  })
-
-  local function position()
-    local col = vim.api.nvim_win_get_cursor(0)[2]
-    local boundary = #prefix + #state.search_pattern
-    return col, boundary, boundary + #separator
-  end
-  local function move(col)
-    vim.api.nvim_win_set_cursor(0, { 1, col })
-  end
-
-  vim.keymap.set("i", "<Right>", function()
-    local col, boundary = position()
-    if col >= boundary and col < boundary + #separator then
-      move(boundary + #separator)
-      return ""
-    else
-      return "<Right>"
-    end
-  end, { buffer = prompt_bufnr, expr = true })
-  vim.keymap.set("i", "<Left>", function()
-    local col, boundary, replacement = position()
-    if col > boundary and col <= replacement then
-      move(boundary)
-      return ""
-    else
-      return "<Left>"
-    end
-  end, { buffer = prompt_bufnr, expr = true })
-  vim.keymap.set("i", "<BS>", function()
-    local col, boundary, replacement = position()
-    if col > boundary and col <= replacement then return "" end
-    return "<BS>"
-  end, { buffer = prompt_bufnr, expr = true })
-  vim.keymap.set("i", "<Del>", function()
-    local col, boundary, replacement = position()
-    if col >= boundary and col < replacement then return "" end
-    return "<Del>"
-  end, { buffer = prompt_bufnr, expr = true })
-  vim.keymap.set("i", "<Home>", function()
-    local col, boundary, replacement = position()
-    move(col >= replacement and replacement or #prefix)
-  end, { buffer = prompt_bufnr })
-  vim.keymap.set("i", "<End>", function()
-    local col, _, replacement = position()
-    move(col >= replacement and #vim.api.nvim_get_current_line() or replacement - #separator)
-  end, { buffer = prompt_bufnr })
-
-  set_raw(picker, state)
+  vim.api.nvim_buf_attach(prompt_bufnr, false, { on_lines = function() vim.schedule(sync) end })
+  sync()
 end
 
 return M

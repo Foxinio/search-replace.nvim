@@ -1,5 +1,28 @@
 local engine = require("search_replace.engine")
+local prompt = require("search_replace.prompt")
 local transaction = require("search_replace.transaction")
+
+local function parsed(text, expected)
+  local actual = prompt.parse(text)
+  for key, value in pairs(expected) do assert(vim.deep_equal(actual[key], value), text .. ": " .. key) end
+  return actual
+end
+
+parsed("", { mode = "idle", pattern = "", replacement = nil })
+parsed("/", { mode = "search", pattern = "", replacement = nil })
+parsed("/foo", { mode = "search", pattern = "foo", replacement = nil })
+parsed("/foo/", { mode = "replace", pattern = "foo", replacement = "" })
+parsed("/foo//g", { mode = "replace", pattern = "foo", replacement = "", flags = { global = true } })
+parsed("/foo/bar", { mode = "replace", pattern = "foo", replacement = "bar" })
+parsed("#foo#bar#", { mode = "replace", pattern = "foo", replacement = "bar" })
+parsed([[/a\/b/x\/y/g]], { pattern = "a/b", replacement = "x/y", flags = { global = true } })
+parsed([[/a\\/b/]], { pattern = [[a\\]], replacement = "b" })
+assert(prompt.parse("afooabar").parse_error)
+assert(prompt.parse([[\foo\bar]]).parse_error)
+assert(prompt.parse("/foo/bar/gg").parse_error)
+assert(prompt.parse("/foo/bar/i").parse_error)
+assert(prompt.parse([[/foo/\=1]]).parse_error)
+assert(not prompt.parse([[/foo/\\=]]).parse_error)
 
 local function matches(pattern, line)
   local found, err = engine.find_matches(pattern, line)
@@ -11,6 +34,7 @@ end
 local three = matches("foo", "foo foo foo")
 assert(#three == 3 and three[2].start_byte == 4)
 assert(engine.compute("foo", "BAR", three[2], "foo foo foo").new_line == "foo BAR foo")
+assert(engine.compute("foo", "BAR", three[2], "foo foo foo", true).new_line == "BAR BAR BAR")
 assert(engine.compute([[\vfoo_(\w+)]], [[new_\1]], matches([[\vfoo_(\w+)]], "foo_name")[1], "foo_name").new_line == "new_name")
 assert(engine.compute([[xx\zsfoo\zeYY]], "BAR", matches([[xx\zsfoo\zeYY]], "xxfooYY")[1], "xxfooYY").new_line == "xxBARYY")
 assert(engine.compute("^foo$", "bar", matches("^foo$", "foo")[1], "foo").new_line == "bar")
@@ -47,6 +71,15 @@ assert(result.applied == 3 and vim.api.nvim_buf_get_lines(bufnr, 0, 1, true)[1] 
 assert(vim.bo[bufnr].modified)
 vim.api.nvim_buf_call(bufnr, function() vim.cmd("undo") end)
 assert(vim.api.nvim_buf_get_lines(bufnr, 0, 1, true)[1] == "foo foo foo")
+result = transaction.run({ three[1], three[2] }, "foo", "", true)
+assert(result.applied == 1 and vim.api.nvim_buf_get_lines(bufnr, 0, 1, true)[1] == "  ")
+vim.api.nvim_buf_call(bufnr, function() vim.cmd("undo") end)
+assert(vim.api.nvim_buf_get_lines(bufnr, 0, 1, true)[1] == "foo foo foo")
+vim.o.gdefault = true
+result = transaction.run({ three[2] }, "foo", "x", false)
+assert(result.applied == 1 and vim.api.nvim_buf_get_lines(bufnr, 0, 1, true)[1] == "foo x foo")
+vim.o.gdefault = false
+vim.api.nvim_buf_call(bufnr, function() vim.cmd("undo") end)
 
 assert(transaction.plan({ three[1], three[1] }, "foo", "x") == nil)
 assert(transaction.targets(three, {}) == three)

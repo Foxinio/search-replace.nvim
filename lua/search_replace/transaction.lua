@@ -16,20 +16,25 @@ function M.targets(all, selected)
   return #selected > 0 and selected or all
 end
 
-function M.plan(matches, pattern, replacement)
+function M.plan(matches, pattern, replacement, global)
   local operations, failures = {}, {}
+  local seen = {}
   for _, match in ipairs(matches) do
-    local ok, bufnr = pcall(buffer_for, match.filename)
-    if not ok then
-      failures[#failures + 1] = { match = match, error = tostring(bufnr) }
-    else
-      local line = vim.api.nvim_buf_get_lines(bufnr, match.lnum - 1, match.lnum, true)[1]
-      local computed, err = line and engine.compute(pattern, replacement, match, line)
-      if not computed then
-        failures[#failures + 1] = { match = match, error = err or "missing line" }
+    local key = table.concat({ match.filename, match.lnum, match.original_text }, "\0")
+    if not global or not seen[key] then
+      seen[key] = true
+      local ok, bufnr = pcall(buffer_for, match.filename)
+      if not ok then
+        failures[#failures + 1] = { match = match, error = tostring(bufnr) }
       else
-        computed.bufnr, computed.filename, computed.lnum = bufnr, match.filename, match.lnum
-        operations[#operations + 1] = computed
+        local line = vim.api.nvim_buf_get_lines(bufnr, match.lnum - 1, match.lnum, true)[1]
+        local computed, err = line and engine.compute(pattern, replacement, match, line, global)
+        if not computed then
+          failures[#failures + 1] = { match = match, error = err or "missing line" }
+        else
+          computed.bufnr, computed.filename, computed.lnum = bufnr, match.filename, match.lnum
+          operations[#operations + 1] = computed
+        end
       end
     end
   end
@@ -68,8 +73,8 @@ function M.apply(operations)
   return applied, failed
 end
 
-function M.run(matches, pattern, replacement)
-  local operations, failures = M.plan(matches, pattern, replacement)
+function M.run(matches, pattern, replacement, global)
+  local operations, failures = M.plan(matches, pattern, replacement, global)
   if not operations then return { applied = 0, stale = 0, failed = #matches, error = failures } end
   local applied, failed = M.apply(operations)
   return { applied = applied, stale = #failures, failed = failed, details = failures }

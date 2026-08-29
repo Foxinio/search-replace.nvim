@@ -5,6 +5,7 @@ local prompt = require("search_replace.prompt")
 local transaction = require("search_replace.transaction")
 
 local M = {}
+local preview_ns = vim.api.nvim_create_namespace("search_replace_preview")
 
 local function entry(match, cwd)
   if match.error then
@@ -38,8 +39,20 @@ local function previewer(state)
   return require("telescope.previewers").new_buffer_previewer({
     title = "Replacement preview",
     define_preview = function(self, selected)
+      vim.api.nvim_buf_clear_namespace(self.state.bufnr, preview_ns, 0, -1)
+      if state.mode == "idle" then
+        vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, { "Enter /pattern/replacement/g", "Any non-alphanumeric single-byte delimiter works." })
+        return
+      end
+      if state.parse_error then
+        vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, { "Prompt error:", state.parse_error })
+        return
+      end
       local match = selected and selected.value
-      if not match then return end
+      if not match then
+        vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, {})
+        return
+      end
       if match.error then
         vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, { "Search error:", match.error })
         return
@@ -50,7 +63,15 @@ local function previewer(state)
         return
       end
       local line = lines[match.lnum - first + 1]
-      local computed, err = engine.compute(state.search_pattern, state.replacement, match, line)
+      if state.mode == "search" then
+        local out = {}
+        for index, text in ipairs(lines) do out[index] = (" %d %s"):format(first + index - 1, text) end
+        vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, out)
+        local row, prefix = match.lnum - first, #(" " .. match.lnum .. " ")
+        vim.api.nvim_buf_add_highlight(self.state.bufnr, preview_ns, "Search", row, prefix + match.start_byte, prefix + match.end_byte)
+        return
+      end
+      local computed, err = engine.compute(state.pattern, state.replacement, match, line, state.flags.global)
       local out = {}
       for index, text in ipairs(lines) do
         local lnum = first + index - 1
@@ -85,8 +106,12 @@ function M.open(opts)
   local cwd = vim.fs.normalize(opts.cwd or vim.uv.cwd())
   if vim.fn.isdirectory(cwd) == 0 then error("invalid cwd: " .. cwd) end
   local state = {
-    search_pattern = opts.search or "",
-    replacement = opts.replacement or "",
+    pattern = "",
+    search_pattern = "",
+    replacement = nil,
+    flags = { global = false },
+    mode = "idle",
+    parse_error = nil,
     search_generation = 0,
     matches = {},
     cwd = cwd,
@@ -122,8 +147,9 @@ function M.open(opts)
     timer:start(config.values.search.debounce, 0, vim.schedule_wrap(search))
   end
   local function apply(matches)
+    if state.mode ~= "replace" or state.parse_error then return end
     if not matches or #matches == 0 then return end
-    local result = transaction.run(matches, state.search_pattern, state.replacement)
+    local result = transaction.run(matches, state.pattern, state.replacement, state.flags.global)
     if result.error then
       vim.notify(result.error, vim.log.levels.ERROR)
     elseif result.stale > 0 then
@@ -134,22 +160,26 @@ function M.open(opts)
 
   picker = pickers.new(opts, {
     prompt_title = "Search and replace — " .. cwd,
-    prompt_prefix = "Search: ",
-    default_text = "  │  ",
+    prompt_prefix = "S/R: ",
+    default_text = "/",
+    history = false,
     finder = finders.new_table({ results = {} }),
     sorter = sorters.empty(),
     previewer = previewer(state),
     attach_mappings = function(prompt_bufnr, map)
-      prompt.attach(prompt_bufnr, state, function(search_changed, replacement_changed)
-        if search_changed then schedule_search() elseif replacement_changed then refresh_preview() end
+      prompt.attach(prompt_bufnr, state, function(pattern_changed)
+        state.search_pattern = state.pattern
+        if pattern_changed then schedule_search() else refresh_preview() end
       end)
       local mappings = config.values.mappings.i
       map("i", mappings.replace_current, function()
+        if state.mode ~= "replace" or state.parse_error then return end
         local selected = action_state.get_selected_entry()
         if selected and not selected.value.error then apply({ selected.value }) end
       end)
       map("i", mappings.toggle_selection, actions.toggle_selection)
       map("i", mappings.replace_selected_or_all, function()
+        if state.mode ~= "replace" or state.parse_error then return end
         local current = action_state.get_current_picker(prompt_bufnr)
         local selected = current:get_multi_selection()
         local targets = {}
@@ -169,7 +199,6 @@ function M.open(opts)
       project.cancel(state)
     end,
   })
-  schedule_search()
 end
 
 return M

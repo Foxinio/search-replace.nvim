@@ -1,8 +1,7 @@
 # search&replace.nvim
 
 Project-wide, occurrence-by-occurrence search and replace with Vim regex and
-`:substitute` semantics in Telescope. Search and replacement stay visible in
-one protected composite prompt; the preview and edits use the same native
+`:substitute` semantics in Telescope. The preview and edits use the same native
 Neovim substitution operation.
 
 ## Requirements
@@ -41,11 +40,24 @@ or after `require("telescope").load_extension("search_replace")`:
 :Telescope search_replace
 ```
 
-The prompt is `Search: pattern  │  replacement`. Arrow keys cross the protected
-separator in one step. `<CR>` replaces only the current occurrence and keeps the
-picker open. `<Tab>` toggles selection. `<C-r>` replaces selected occurrences,
-or every current occurrence when nothing is selected. Buffers remain modified
-and are never automatically written.
+The normally editable prompt uses Vim-style delimiter syntax:
+
+```vim
+/pattern/replacement/g
+#pattern#replacement#
+```
+
+Any single-byte, non-alphanumeric delimiter except `\`, `"`, and `|` works.
+Escape a delimiter with `\`; that command-level escape is removed before the
+pattern or replacement reaches Vim. The first delimiter starts live search, and
+the second starts replacement preview, so `/foo/` is a valid empty replacement.
+The closing delimiter is optional unless flags follow it. The only flag is `g`.
+
+Each match, including several matches on one line, is a separate picker entry.
+Without `g`, `<CR>` replaces only the current occurrence; with `g`, targeting any
+occurrence replaces every match on its line. `<Tab>` toggles selection. `<C-R>`
+replaces selected occurrences, or all current results when nothing is selected.
+Buffers remain modified and are never automatically written.
 
 ## Behavior
 
@@ -66,6 +78,11 @@ Run domain tests with `make test`. Telescope UI behavior is best checked using
 the acceptance workflow in the project specification.
 
 ## TODO
-- Multi line patterns
-- Same line occurences
-- `<Tab>` selected diff preview
+
+- `i` and `I` substitute flags
+- Separate search-pattern and replacement histories
+- Empty-pattern reuse
+- Previous-replacement reuse
+- Safe, non-mutating `\=` replacement expressions
+- Multiline patterns
+- Combined preview for multiple selected entries
