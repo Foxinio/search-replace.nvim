@@ -1,0 +1,175 @@
+local config = require("search_replace.config")
+local engine = require("search_replace.engine")
+local project = require("search_replace.project")
+local prompt = require("search_replace.prompt")
+local transaction = require("search_replace.transaction")
+
+local M = {}
+
+local function entry(match, cwd)
+  if match.error then
+    return { value = match, ordinal = match.id, display = "Error: " .. match.error }
+  end
+  local relative = vim.fn.fnamemodify(match.filename, ":.")
+  if match.filename:sub(1, #cwd + 1) == cwd .. "/" then relative = match.filename:sub(#cwd + 2) end
+  return {
+    value = match,
+    ordinal = match.id,
+    filename = match.filename,
+    lnum = match.lnum,
+    col = match.start_byte + 1,
+    display = ("%s:%d:%d    %s"):format(relative, match.lnum, match.start_byte + 1, match.original_text),
+  }
+end
+
+local function current_lines(match, context)
+  local bufnr = vim.fn.bufnr(match.filename)
+  if bufnr >= 0 and vim.api.nvim_buf_is_loaded(bufnr) then
+    local first, last = math.max(0, match.lnum - context - 1), match.lnum + context
+    return vim.api.nvim_buf_get_lines(bufnr, first, last, true), first + 1
+  end
+  local ok, lines = pcall(vim.fn.readfile, match.filename, "", match.lnum + context)
+  if not ok then return nil, tostring(lines) end
+  local first = math.max(1, match.lnum - context)
+  return vim.list_slice(lines, first), first
+end
+
+local function previewer(state)
+  return require("telescope.previewers").new_buffer_previewer({
+    title = "Replacement preview",
+    define_preview = function(self, selected)
+      local match = selected and selected.value
+      if not match then return end
+      if match.error then
+        vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, { "Search error:", match.error })
+        return
+      end
+      local lines, first = current_lines(match, config.values.preview.context)
+      if not lines then
+        vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, { first })
+        return
+      end
+      local line = lines[match.lnum - first + 1]
+      local computed, err = engine.compute(state.search_pattern, state.replacement, match, line)
+      local out = {}
+      for index, text in ipairs(lines) do
+        local lnum = first + index - 1
+        if lnum == match.lnum then
+          out[#out + 1] = ("-%d %s"):format(lnum, text)
+          if computed then
+            for _, replacement_line in ipairs(vim.split(computed.new_line, "\r", { plain = true })) do
+              out[#out + 1] = ("+%d %s"):format(lnum, replacement_line:gsub("\n", "\0"))
+            end
+          else
+            out[#out + 1] = "! " .. err
+          end
+        else
+          out[#out + 1] = (" %d %s"):format(lnum, text)
+        end
+      end
+      vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, out)
+      vim.bo[self.state.bufnr].filetype = "diff"
+    end,
+  })
+end
+
+function M.open(opts)
+  if vim.fn.has("nvim-0.10") == 0 then error("search-replace.nvim requires Neovim 0.10+") end
+  local ok = pcall(require, "telescope")
+  if not ok then error("search-replace.nvim requires telescope.nvim") end
+  if vim.fn.executable("rg") == 0 and not config.values.search.command then
+    error("search-replace.nvim requires rg for file discovery")
+  end
+
+  opts = opts or {}
+  local cwd = vim.fs.normalize(opts.cwd or vim.uv.cwd())
+  if vim.fn.isdirectory(cwd) == 0 then error("invalid cwd: " .. cwd) end
+  local state = {
+    search_pattern = opts.search or "",
+    replacement = opts.replacement or "",
+    search_generation = 0,
+    matches = {},
+    cwd = cwd,
+  }
+  local pickers = require("telescope.pickers")
+  local finders = require("telescope.finders")
+  local sorters = require("telescope.sorters")
+  local actions = require("telescope.actions")
+  local action_state = require("telescope.actions.state")
+  local timer = vim.uv.new_timer()
+  local picker
+
+  local function refresh_results()
+    if picker and picker.prompt_bufnr and vim.api.nvim_buf_is_valid(picker.prompt_bufnr) then
+      local displayed = state.search_error and { { error = state.search_error, id = state.search_error } } or state.matches
+      picker:refresh(finders.new_table({ results = displayed, entry_maker = function(m) return entry(m, cwd) end }), { reset_prompt = false })
+    end
+  end
+  local function refresh_preview()
+    if picker then picker:refresh_previewer() end
+  end
+  local function search()
+    project.search(state, config.values.search, function(matches, err, generation)
+      if generation ~= state.search_generation then return end
+      state.matches, state.search_error = matches, err
+      refresh_results()
+    end)
+  end
+  local function schedule_search()
+    timer:stop()
+    project.cancel(state)
+    state.search_generation = state.search_generation + 1
+    timer:start(config.values.search.debounce, 0, vim.schedule_wrap(search))
+  end
+  local function apply(matches)
+    if not matches or #matches == 0 then return end
+    local result = transaction.run(matches, state.search_pattern, state.replacement)
+    if result.error then
+      vim.notify(result.error, vim.log.levels.ERROR)
+    elseif result.stale > 0 then
+      vim.notify(("replaced %d; skipped %d stale matches"):format(result.applied, result.stale), vim.log.levels.WARN)
+    end
+    schedule_search()
+  end
+
+  picker = pickers.new(opts, {
+    prompt_title = "Search and replace — " .. cwd,
+    prompt_prefix = "Search: ",
+    default_text = "  │  ",
+    finder = finders.new_table({ results = {} }),
+    sorter = sorters.empty(),
+    previewer = previewer(state),
+    attach_mappings = function(prompt_bufnr, map)
+      prompt.attach(prompt_bufnr, state, function(search_changed, replacement_changed)
+        if search_changed then schedule_search() elseif replacement_changed then refresh_preview() end
+      end)
+      local mappings = config.values.mappings.i
+      map("i", mappings.replace_current, function()
+        local selected = action_state.get_selected_entry()
+        if selected and not selected.value.error then apply({ selected.value }) end
+      end)
+      map("i", mappings.toggle_selection, actions.toggle_selection)
+      map("i", mappings.replace_selected_or_all, function()
+        local current = action_state.get_current_picker(prompt_bufnr)
+        local selected = current:get_multi_selection()
+        local targets = {}
+        for _, item in ipairs(selected) do targets[#targets + 1] = item.value end
+        apply(transaction.targets(state.matches, targets))
+      end)
+      return true
+    end,
+  })
+  picker:find()
+  vim.api.nvim_create_autocmd("BufWipeout", {
+    buffer = picker.prompt_bufnr,
+    once = true,
+    callback = function()
+      timer:stop()
+      timer:close()
+      project.cancel(state)
+    end,
+  })
+  schedule_search()
+end
+
+return M
