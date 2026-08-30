@@ -23,16 +23,11 @@ local function entry(match, cwd)
   }
 end
 
-local function current_lines(match, context)
-  local bufnr = vim.fn.bufnr(match.filename)
-  if bufnr >= 0 and vim.api.nvim_buf_is_loaded(bufnr) then
-    local first, last = math.max(0, match.lnum - context - 1), match.lnum + context
-    return vim.api.nvim_buf_get_lines(bufnr, first, last, true), first + 1
-  end
-  local ok, lines = pcall(vim.fn.readfile, match.filename, "", match.lnum + context)
-  if not ok then return nil, tostring(lines) end
+local function current_lines(state, match, context)
+  local lines = project.lines(state, match.filename)
+  if not lines then return nil, "missing cached file" end
   local first = math.max(1, match.lnum - context)
-  return vim.list_slice(lines, first), first
+  return vim.list_slice(lines, first, match.lnum + context), first
 end
 
 local function previewer(state)
@@ -57,7 +52,7 @@ local function previewer(state)
         vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, { "Search error:", match.error })
         return
       end
-      local lines, first = current_lines(match, config.values.preview.context)
+      local lines, first = current_lines(state, match, config.values.preview.context)
       if not lines then
         vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, { first })
         return
@@ -114,6 +109,8 @@ function M.open(opts)
     parse_error = nil,
     search_generation = 0,
     matches = {},
+    files = {},
+    files_by_name = {},
     cwd = cwd,
   }
   local pickers = require("telescope.pickers")
@@ -146,7 +143,6 @@ function M.open(opts)
   end
   local function schedule_search()
     timer:stop()
-    project.cancel(state)
     state.search_generation = state.search_generation + 1
     timer:start(config.values.search.debounce, 0, vim.schedule_wrap(search))
   end
@@ -159,7 +155,11 @@ function M.open(opts)
     elseif result.stale > 0 then
       vim.notify(("replaced %d; skipped %d stale matches"):format(result.applied, result.stale), vim.log.levels.WARN)
     end
-    schedule_search()
+    if result.applied > 0 then
+      local refreshed, refresh_err = project.refresh(state, result.changes)
+      state.matches, state.search_error = refreshed or {}, refresh_err
+      refresh_results()
+    end
   end
 
   picker = pickers.new(opts, {

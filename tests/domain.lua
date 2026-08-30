@@ -73,6 +73,7 @@ for _, match in ipairs(three) do match.filename, match.lnum = path, 1 end
 local result = transaction.run({ three[2] }, "foo", "LONG")
 local bufnr = vim.fn.bufnr(path)
 assert(result.applied == 1 and vim.api.nvim_buf_get_lines(bufnr, 0, 1, true)[1] == "foo LONG foo")
+assert(result.changes[path].lines[1] and not result.changes[path].line_structure_changed)
 vim.api.nvim_buf_call(bufnr, function() vim.cmd("undo") end)
 assert(vim.api.nvim_buf_get_lines(bufnr, 0, 1, true)[1] == "foo foo foo")
 result = transaction.run(three, "foo", "x")
@@ -123,6 +124,7 @@ local newline_match = matches("foo", "foo")[1]
 newline_match.filename, newline_match.lnum = newline_path, 1
 result = transaction.run({ newline_match }, "foo", [[x\ny]])
 assert(result.applied == 1)
+assert(not result.changes[newline_path].line_structure_changed)
 assert(vim.api.nvim_buf_get_lines(vim.fn.bufnr(newline_path), 0, -1, true)[1] == "x\0y")
 
 vim.api.nvim_buf_set_lines(bufnr, 0, 1, true, { "changed" })

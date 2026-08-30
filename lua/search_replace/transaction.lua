@@ -53,9 +53,9 @@ function M.plan(matches, pattern, replacement, global)
 end
 
 function M.apply(operations)
-  local changed, applied, failed = {}, 0, 0
+  local joined, changes, applied, failed = {}, {}, 0, 0
   for _, op in ipairs(operations) do
-    if changed[op.bufnr] then
+    if joined[op.bufnr] then
       vim.api.nvim_buf_call(op.bufnr, function() pcall(vim.cmd, "undojoin") end)
     end
     local replacement = op.new_text:gsub("\n", "\0")
@@ -65,19 +65,23 @@ function M.apply(operations)
       vim.split(replacement, "\r", { plain = true })
     )
     if ok then
-      applied, changed[op.bufnr] = applied + 1, true
+      applied, joined[op.bufnr] = applied + 1, true
+      local change = changes[op.filename] or { bufnr = op.bufnr, lines = {}, line_structure_changed = false }
+      change.lines[op.lnum] = true
+      change.line_structure_changed = change.line_structure_changed or op.new_line:find("\r", 1, true) ~= nil
+      changes[op.filename] = change
     else
       failed = failed + 1
     end
   end
-  return applied, failed
+  return applied, failed, changes
 end
 
 function M.run(matches, pattern, replacement, global)
   local operations, failures = M.plan(matches, pattern, replacement, global)
   if not operations then return { applied = 0, stale = 0, failed = #matches, error = failures } end
-  local applied, failed = M.apply(operations)
-  return { applied = applied, stale = #failures, failed = failed, details = failures }
+  local applied, failed, changes = M.apply(operations)
+  return { applied = applied, stale = #failures, failed = failed, details = failures, changes = changes }
 end
 
 return M
