@@ -1,14 +1,14 @@
 local M = {}
 
-local function regex_error(pattern)
+function M.validate(pattern)
   local ok, err = pcall(vim.regex, pattern)
   if ok then return nil end
   return tostring(err):gsub("^.-: ", "")
 end
 
-function M.find_matches(pattern, line)
+function M.find_matches(pattern, line, validated)
   if pattern == "" then return {} end
-  local err = regex_error(pattern)
+  local err = not validated and M.validate(pattern)
   if err then return nil, err end
   local out, start = {}, 0
   while true do

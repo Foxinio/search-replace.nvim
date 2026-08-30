@@ -31,6 +31,15 @@ local function matches(pattern, line)
   return found
 end
 
+local validate, validations = engine.validate, 0
+engine.validate = function(...)
+  validations = validations + 1
+  return validate(...)
+end
+assert(#engine.find_matches("foo", "foo", true) == 1 and validations == 0)
+assert(#engine.find_matches("foo", "foo") == 1 and validations == 1)
+engine.validate = validate
+
 local three = matches("foo", "foo foo foo")
 assert(#three == 3 and three[2].start_byte == 4)
 assert(engine.compute("foo", "BAR", three[2], "foo foo foo").new_line == "foo BAR foo")

@@ -61,7 +61,7 @@ function M.search(state, config, done)
   if pattern:find("\n", 1, true) or pattern:find([[\_]], 1, true) then
     return done({}, "multiline patterns are not supported", generation)
   end
-  local _, regex_err = engine.find_matches(pattern, "")
+  local regex_err = engine.validate(pattern)
   if regex_err then return done({}, regex_err, generation) end
 
   local cmd, nul = command(config)
@@ -98,7 +98,7 @@ function M.search(state, config, done)
             if lines then
               for index, line in ipairs(lines) do
                 line = line:gsub("\r$", "")
-                local found, err = engine.find_matches(pattern, line)
+                local found, err = engine.find_matches(pattern, line, true)
                 if err then return done({}, err, generation) end
                 for _, match in ipairs(found) do
                   match.filename = filename
