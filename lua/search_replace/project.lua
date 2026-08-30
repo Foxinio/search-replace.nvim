@@ -2,7 +2,7 @@ local engine = require("search_replace.engine")
 
 local M = {}
 local uv = vim.uv or vim.loop
-local scan_budget_ns = 5e6
+local scan_budget_ns = 1e6
 local progress_interval_ns = 30e6
 
 local function under(path, root)
@@ -128,18 +128,23 @@ local function scan_record_async(record, lines, pattern, alive, done)
   vim.schedule(step)
 end
 
-local function flatten(state)
+local function flatten(state, limit)
   local matches = {}
   for _, record in ipairs(state.files) do
     for lnum = 1, #record.lines do
       vim.list_extend(matches, record.matches_by_line[lnum] or {})
+      if limit and #matches >= limit then
+        matches = vim.list_slice(matches, 1, limit)
+        state.matches = matches
+        return matches
+      end
     end
   end
   state.matches = matches
   return matches
 end
 
-local function scan(state, pattern, generation, done, progress)
+local function scan(state, pattern, generation, done, progress, progress_limit)
   add_loaded_files(state)
   for _, record in ipairs(state.files) do record.matches_by_line = {} end
   local next_file, active, finished, last_progress = 1, 0, false, 0
@@ -148,7 +153,7 @@ local function scan(state, pattern, generation, done, progress)
     local now = uv.hrtime()
     if progress and now - last_progress >= progress_interval_ns then
       last_progress = now
-      progress(flatten(state), generation)
+      progress(flatten(state, progress_limit), generation)
     end
   end
   local function finish(err)
@@ -209,7 +214,7 @@ local function discover(state, config)
       state.discovered = true
       table.sort(state.files, function(a, b) return a.filename < b.filename end)
       if waiter and waiter.generation == state.search_generation then
-        scan(state, waiter.pattern, waiter.generation, waiter.done, waiter.progress)
+        scan(state, waiter.pattern, waiter.generation, waiter.done, waiter.progress, waiter.progress_limit)
       end
     end)
   end)
@@ -236,8 +241,14 @@ function M.search(state, config, done, progress)
   end
   local regex_err = engine.validate(pattern)
   if regex_err then return done({}, regex_err, generation) end
-  if state.discovered then return scan(state, pattern, generation, done, progress) end
-  state.discovery_waiter = { pattern = pattern, generation = generation, done = done, progress = progress }
+  if state.discovered then return scan(state, pattern, generation, done, progress, config.max_results) end
+  state.discovery_waiter = {
+    pattern = pattern,
+    generation = generation,
+    done = done,
+    progress = progress,
+    progress_limit = config.max_results,
+  }
   if not state.discovery_pending then discover(state, config) end
 end
 

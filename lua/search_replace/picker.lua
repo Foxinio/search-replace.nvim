@@ -109,6 +109,7 @@ function M.open(opts)
     parse_error = nil,
     search_generation = 0,
     matches = {},
+    searching = false,
     files = {},
     files_by_name = {},
     cwd = cwd,
@@ -136,9 +137,10 @@ function M.open(opts)
     if active() then picker:refresh_previewer() end
   end
   local function search()
+    state.searching = true
     project.search(state, config.values.search, function(matches, err, generation)
       if generation ~= state.search_generation then return end
-      state.matches, state.search_error = matches, err
+      state.matches, state.search_error, state.searching = matches, err, false
       refresh_results()
     end, function(matches, generation)
       if generation ~= state.search_generation then return end
@@ -153,6 +155,7 @@ function M.open(opts)
   end
   local function apply(matches)
     if state.mode ~= "replace" or state.parse_error then return end
+    if state.searching then return vim.notify("search still in progress", vim.log.levels.INFO) end
     if not matches or #matches == 0 then return end
     local result = transaction.run(matches, state.pattern, state.replacement, state.flags.global)
     if result.error then

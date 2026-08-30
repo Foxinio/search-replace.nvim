@@ -24,7 +24,7 @@ local count = root .. "/count"
 local discover = root .. "/discover"
 vim.fn.writefile({ "#!/bin/sh", "printf x >> '" .. count .. "'", "sleep 0.05", "printf 'a.txt\\nb.txt\\nd.txt\\n'" }, discover)
 vim.fn.setfperm(discover, "rwx------")
-local config = { command = { discover }, hidden = false, ignored = false, globs = {} }
+local config = { command = { discover }, max_results = 1, hidden = false, ignored = false, globs = {} }
 local state = { search_pattern = "foo", search_generation = 0, cwd = root, files = {}, files_by_name = {}, matches = {} }
 local obsolete_called = false
 local progress_updates = 0
@@ -34,7 +34,8 @@ local function searches(pattern, callback)
   project.search(state, config, function(found, err)
     assert(not err, err)
     callback(found)
-  end, function()
+  end, function(found)
+    assert(#found <= config.max_results)
     progress_updates = progress_updates + 1
   end)
 end
