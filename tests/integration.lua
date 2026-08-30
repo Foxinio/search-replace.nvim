@@ -27,12 +27,15 @@ vim.fn.setfperm(discover, "rwx------")
 local config = { command = { discover }, hidden = false, ignored = false, globs = {} }
 local state = { search_pattern = "foo", search_generation = 0, cwd = root, files = {}, files_by_name = {}, matches = {} }
 local obsolete_called = false
+local progress_updates = 0
 
 local function searches(pattern, callback)
   state.search_pattern = pattern
   project.search(state, config, function(found, err)
     assert(not err, err)
     callback(found)
+  end, function()
+    progress_updates = progress_updates + 1
   end)
 end
 
@@ -98,6 +101,7 @@ searches("bar", function(bar)
         assert(#state.files_by_name[root .. "/a.txt"].lines == 2)
         assert(vim.fn.readfile(count)[1] == "x")
         assert(validations == 5)
+        assert(progress_updates > 0)
 
         print("project integration tests passed")
         vim.cmd("qa!")

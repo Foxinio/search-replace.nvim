@@ -16,6 +16,7 @@ Neovim substitution operation.
 require("search_replace").setup({
   search = {
     debounce = 100,
+    max_results = 5000, -- picker display only; replace-all still uses every match
     hidden = false,
     ignored = false,
     globs = {},

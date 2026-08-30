@@ -2,6 +2,8 @@ local engine = require("search_replace.engine")
 
 local M = {}
 local uv = vim.uv or vim.loop
+local scan_budget_ns = 5e6
+local progress_interval_ns = 30e6
 
 local function under(path, root)
   return path == root or path:sub(1, #root + 1) == root .. "/"
@@ -109,6 +111,23 @@ local function scan_record(record, lines, pattern)
   return true
 end
 
+local function scan_record_async(record, lines, pattern, alive, done)
+  local buckets, lnum = {}, 1
+  local function step()
+    if not alive() then return end
+    local started = uv.hrtime()
+    repeat
+      local found, err, clean = scan_line(record, lnum, lines[lnum], pattern)
+      if not found then return done(nil, err) end
+      lines[lnum], buckets[lnum], lnum = clean, found, lnum + 1
+    until lnum > #lines or uv.hrtime() - started >= scan_budget_ns
+    if lnum <= #lines then return vim.schedule(step) end
+    record.lines, record.matches_by_line = lines, buckets
+    done(true)
+  end
+  vim.schedule(step)
+end
+
 local function flatten(state)
   local matches = {}
   for _, record in ipairs(state.files) do
@@ -120,11 +139,20 @@ local function flatten(state)
   return matches
 end
 
-local function scan(state, pattern, generation, done)
+local function scan(state, pattern, generation, done, progress)
   add_loaded_files(state)
-  local next_file, active, finished = 1, 0, false
+  for _, record in ipairs(state.files) do record.matches_by_line = {} end
+  local next_file, active, finished, last_progress = 1, 0, false, 0
+  local function alive() return not finished and generation == state.search_generation end
+  local function publish()
+    local now = uv.hrtime()
+    if progress and now - last_progress >= progress_interval_ns then
+      last_progress = now
+      progress(flatten(state), generation)
+    end
+  end
   local function finish(err)
-    if finished or generation ~= state.search_generation then return end
+    if not alive() then return end
     finished = true
     done(err and {} or flatten(state), err, generation)
   end
@@ -133,21 +161,26 @@ local function scan(state, pattern, generation, done)
     while active < 8 and next_file <= #state.files do
       local record = state.files[next_file]
       next_file, active = next_file + 1, active + 1
-      source(record, function(lines, err, stat, from_disk)
-        active = active - 1
+      source(record, function(lines, _, stat, from_disk)
         if finished or generation ~= state.search_generation then return end
         if not lines then
           record.lines, record.matches_by_line = {}, {}
+          active = active - 1
+          publish()
+          if next_file > #state.files and active == 0 then finish() else pump() end
         else
           if stat then
             remember_disk(record, stat, lines)
           elseif not from_disk then
             record.lines, record.from_disk = lines, false
           end
-          local ok, scan_err = scan_record(record, record.lines, pattern)
-          if not ok then return finish(scan_err) end
+          scan_record_async(record, record.lines, pattern, alive, function(ok, scan_err)
+            active = active - 1
+            if not ok then return finish(scan_err) end
+            publish()
+            if next_file > #state.files and active == 0 then finish() else pump() end
+          end)
         end
-        if next_file > #state.files and active == 0 then finish() else pump() end
       end)
     end
     if #state.files == 0 then finish() end
@@ -176,7 +209,7 @@ local function discover(state, config)
       state.discovered = true
       table.sort(state.files, function(a, b) return a.filename < b.filename end)
       if waiter and waiter.generation == state.search_generation then
-        scan(state, waiter.pattern, waiter.generation, waiter.done)
+        scan(state, waiter.pattern, waiter.generation, waiter.done, waiter.progress)
       end
     end)
   end)
@@ -189,7 +222,7 @@ function M.cancel(state)
   state.search_job, state.discovery_pending = nil, false
 end
 
-function M.search(state, config, done)
+function M.search(state, config, done, progress)
   state.files, state.files_by_name = state.files or {}, state.files_by_name or {}
   state.search_generation = state.search_generation + 1
   local generation, pattern = state.search_generation, state.search_pattern
@@ -203,8 +236,8 @@ function M.search(state, config, done)
   end
   local regex_err = engine.validate(pattern)
   if regex_err then return done({}, regex_err, generation) end
-  if state.discovered then return scan(state, pattern, generation, done) end
-  state.discovery_waiter = { pattern = pattern, generation = generation, done = done }
+  if state.discovered then return scan(state, pattern, generation, done, progress) end
+  state.discovery_waiter = { pattern = pattern, generation = generation, done = done, progress = progress }
   if not state.discovery_pending then discover(state, config) end
 end
 

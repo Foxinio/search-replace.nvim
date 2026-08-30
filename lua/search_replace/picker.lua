@@ -128,6 +128,7 @@ function M.open(opts)
   local function refresh_results()
     if active() and vim.api.nvim_buf_is_valid(picker.prompt_bufnr) then
       local displayed = state.search_error and { { error = state.search_error, id = state.search_error } } or state.matches
+      displayed = vim.list_slice(displayed, 1, config.values.search.max_results)
       picker:refresh(finders.new_table({ results = displayed, entry_maker = function(m) return entry(m, cwd) end }), { reset_prompt = false })
     end
   end
@@ -138,6 +139,10 @@ function M.open(opts)
     project.search(state, config.values.search, function(matches, err, generation)
       if generation ~= state.search_generation then return end
       state.matches, state.search_error = matches, err
+      refresh_results()
+    end, function(matches, generation)
+      if generation ~= state.search_generation then return end
+      state.matches, state.search_error = matches, nil
       refresh_results()
     end)
   end
