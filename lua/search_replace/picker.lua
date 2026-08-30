@@ -121,17 +121,21 @@ function M.open(opts)
   local sorters = require("telescope.sorters")
   local actions = require("telescope.actions")
   local action_state = require("telescope.actions.state")
+  local telescope_state = require("telescope.state")
   local timer = vim.uv.new_timer()
   local picker
 
+  local function active()
+    return picker and picker.prompt_bufnr and telescope_state.get_status(picker.prompt_bufnr).layout
+  end
   local function refresh_results()
-    if picker and picker.prompt_bufnr and vim.api.nvim_buf_is_valid(picker.prompt_bufnr) then
+    if active() and vim.api.nvim_buf_is_valid(picker.prompt_bufnr) then
       local displayed = state.search_error and { { error = state.search_error, id = state.search_error } } or state.matches
       picker:refresh(finders.new_table({ results = displayed, entry_maker = function(m) return entry(m, cwd) end }), { reset_prompt = false })
     end
   end
   local function refresh_preview()
-    if picker then picker:refresh_previewer() end
+    if active() then picker:refresh_previewer() end
   end
   local function search()
     project.search(state, config.values.search, function(matches, err, generation)
