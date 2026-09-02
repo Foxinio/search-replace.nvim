@@ -56,7 +56,9 @@ local function read_disk(record, _, callback)
         vim.schedule(function()
           if read_err then return callback(nil, read_err) end
           if data:find("\0", 1, true) then return callback(nil, "binary") end
-          callback(vim.split(data, "\n", { plain = true }), nil, stat, true)
+          local lines = vim.split(data, "\n", { plain = true })
+          if data:sub(-1) == "\n" then lines[#lines] = nil end
+          callback(lines, nil, stat, true)
         end)
       end)
     end)
@@ -65,7 +67,7 @@ end
 
 local function source(record, callback)
   local bufnr = vim.fn.bufnr(record.filename)
-  if bufnr >= 0 and vim.api.nvim_buf_is_loaded(bufnr) and vim.bo[bufnr].modified then
+  if bufnr >= 0 and vim.api.nvim_buf_is_loaded(bufnr) then
     return callback(vim.api.nvim_buf_get_lines(bufnr, 0, -1, true), nil, nil, false)
   end
   uv.fs_stat(record.filename, function(err, stat)

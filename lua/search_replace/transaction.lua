@@ -27,7 +27,7 @@ function M.plan(matches, pattern, replacement, global)
       if not ok then
         failures[#failures + 1] = { match = match, error = tostring(bufnr) }
       else
-        local line = vim.api.nvim_buf_get_lines(bufnr, match.lnum - 1, match.lnum, true)[1]
+        local line = vim.api.nvim_buf_get_lines(bufnr, match.lnum - 1, match.lnum, false)[1]
         local computed, err = line and engine.compute(pattern, replacement, match, line, global)
         if not computed then
           failures[#failures + 1] = { match = match, error = err or "missing line" }

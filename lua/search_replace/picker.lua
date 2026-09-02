@@ -31,7 +31,7 @@ local function current_lines(state, match, context)
 end
 
 local function previewer(state)
-  return require("telescope.previewers").new_buffer_previewer({
+  local result = require("telescope.previewers").new_buffer_previewer({
     title = "Replacement preview",
     define_preview = function(self, selected)
       vim.api.nvim_buf_clear_namespace(self.state.bufnr, preview_ns, 0, -1)
@@ -61,7 +61,12 @@ local function previewer(state)
         vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, { "Search error:", match.error })
         return
       end
-      local lines, first = current_lines(state, match, config.values.preview.context)
+      local lines, first
+      if state.mode == "search" then
+        lines, first = current_lines(state, match, config.values.preview.context)
+      else
+        lines, first = project.lines(state, match.filename), 1
+      end
       if not lines then
         vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, { first })
         return
@@ -96,6 +101,11 @@ local function previewer(state)
       vim.bo[self.state.bufnr].filetype = "diff"
     end,
   })
+  local preview = result.preview
+  function result:preview(selected, status)
+    return preview(self, selected or {}, status)
+  end
+  return result
 end
 
 function M.open(opts)
@@ -172,7 +182,9 @@ function M.open(opts)
     elseif result.stale > 0 then
       vim.notify(("replaced %d; skipped %d stale matches"):format(result.applied, result.stale), vim.log.levels.WARN)
     end
-    if result.applied > 0 then
+    if result.stale > 0 then
+      search()
+    elseif result.applied > 0 then
       local refreshed, refresh_err = project.refresh(state, result.changes)
       state.matches, state.search_error = refreshed or {}, refresh_err
       refresh_results()
@@ -182,7 +194,6 @@ function M.open(opts)
   picker = pickers.new(opts, {
     prompt_title = "Search and replace — " .. cwd,
     prompt_prefix = "S/R: ",
-    default_text = "/",
     history = false,
     finder = finders.new_table({ results = {} }),
     sorter = sorters.empty(),

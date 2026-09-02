@@ -130,5 +130,8 @@ assert(vim.api.nvim_buf_get_lines(vim.fn.bufnr(newline_path), 0, -1, true)[1] ==
 vim.api.nvim_buf_set_lines(bufnr, 0, 1, true, { "changed" })
 result = transaction.run({ three[1] }, "foo", "x")
 assert(result.applied == 0 and result.stale == 1)
+three[1].lnum = 2
+result = transaction.run({ three[1] }, "foo", "x")
+assert(result.applied == 0 and result.stale == 1)
 print("domain tests passed")
 vim.cmd("qa!")

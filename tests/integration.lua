@@ -55,10 +55,11 @@ searches("bar", function(bar)
       vim.fn.writefile({ "newer foo foo" }, root .. "/d.txt")
       vim.fn.writefile({ "foo" }, root .. "/new.txt")
       searches("foo", function(changed_disk)
-        assert(#changed_disk == 7, vim.inspect(changed_disk))
+        assert(#changed_disk == 6, vim.inspect(changed_disk))
+        assert(#state.files_by_name[root .. "/b.txt"].lines == 2)
         assert(not state.files_by_name[root .. "/new.txt"])
         assert(state.files_by_name[root .. "/b.txt"].lines ~= old_b_lines)
-        assert(project.lines(state, root .. "/d.txt")[1] == "newer foo foo")
+        assert(project.lines(state, root .. "/d.txt")[1] == "disk foo")
         assert(vim.api.nvim_buf_get_lines(d_buf, 0, 1, true)[1] == "disk foo")
         assert(vim.fn.readfile(count)[1] == "x")
         for index = 2, #changed_disk do
@@ -67,13 +68,6 @@ searches("bar", function(bar)
             or (before.filename == after.filename and (before.lnum < after.lnum
               or (before.lnum == after.lnum and before.start_byte <= after.start_byte))))
         end
-
-        local stale
-        for _, match in ipairs(changed_disk) do
-          if match.filename == root .. "/d.txt" then stale = match break end
-        end
-        local stale_result = transaction.run({ stale }, "foo", "x")
-        assert(stale_result.applied == 0 and stale_result.stale == 1)
 
         local target
         for _, match in ipairs(changed_disk) do
@@ -84,21 +78,21 @@ searches("bar", function(bar)
         assert(result.applied == 1 and result.changes[target.filename].lines[1])
         local refreshed, refresh_err = project.refresh(state, result.changes)
         assert(not refresh_err, refresh_err)
-        assert(#refreshed == 8 and state.files_by_name[root .. "/b.txt"].matches_by_line[2] == untouched)
+        assert(#refreshed == 7 and state.files_by_name[root .. "/b.txt"].matches_by_line[2] == untouched)
 
         target = state.files_by_name[root .. "/b.txt"].matches_by_line[1][1]
         result = transaction.run({ target }, "foo", "x", true)
         assert(result.applied == 1)
         refreshed, refresh_err = project.refresh(state, result.changes)
         assert(not refresh_err, refresh_err)
-        assert(#refreshed == 4)
+        assert(#refreshed == 3)
 
         target = state.files_by_name[root .. "/a.txt"].matches_by_line[1][1]
         result = transaction.run({ target }, "foo", [[foo\rfoo]])
         assert(result.applied == 1 and result.changes[target.filename].line_structure_changed)
         refreshed, refresh_err = project.refresh(state, result.changes)
         assert(not refresh_err, refresh_err)
-        assert(#refreshed == 5)
+        assert(#refreshed == 4)
         assert(#state.files_by_name[root .. "/a.txt"].lines == 2)
         assert(vim.fn.readfile(count)[1] == "x")
         assert(validations == 5)
