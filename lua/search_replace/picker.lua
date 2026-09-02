@@ -36,7 +36,16 @@ local function previewer(state)
     define_preview = function(self, selected)
       vim.api.nvim_buf_clear_namespace(self.state.bufnr, preview_ns, 0, -1)
       if state.mode == "idle" then
-        vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, { "Enter /pattern/replacement/g", "Any non-alphanumeric single-byte delimiter works." })
+        local mappings = config.values.mappings.i
+        vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, {
+          "Enter /pattern/replacement/g",
+          "Any non-alphanumeric single-byte delimiter works.",
+          "",
+          "Key bindings:",
+          mappings.replace_current .. "  Replace current occurrence",
+          mappings.toggle_selection .. "  Toggle selection",
+          mappings.replace_selected_or_all .. "  Replace selected occurrences, or all when none are selected",
+        })
         return
       end
       if state.parse_error then

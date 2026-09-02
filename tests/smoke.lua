@@ -10,7 +10,10 @@ vim.fn.writefile({ "foo foo" }, root .. "/a.txt")
 local discover = root .. "/discover"
 vim.fn.writefile({ "#!/bin/sh", "printf 'a.txt\\n'" }, discover)
 vim.fn.setfperm(discover, "rwx------")
-require("search_replace").setup({ search = { debounce = 0, max_results = 1, command = { discover } } })
+require("search_replace").setup({
+  search = { debounce = 0, max_results = 1, command = { discover } },
+  mappings = { i = { replace_current = "<C-E>", toggle_selection = "<C-T>", replace_selected_or_all = "<C-A>" } },
+})
 require("search_replace").open({ cwd = root })
 
 local telescope_state = require("telescope.state")
@@ -28,6 +31,13 @@ local function preview()
 end
 
 wait_for(function() return type(picker.manager) == "table" end, "picker initialization")
+picker:set_prompt("")
+wait_for(function()
+  local text = preview()
+  return text:find("<C-E>  Replace current occurrence", 1, true)
+    and text:find("<C-T>  Toggle selection", 1, true)
+    and text:find("<C-A>  Replace selected occurrences", 1, true)
+end, "idle instructions")
 picker:set_prompt("/foo")
 wait_for(function()
   return type(picker.manager) == "table" and picker.manager:num_results() == 1 and preview():find(" 1 foo foo", 1, true)
