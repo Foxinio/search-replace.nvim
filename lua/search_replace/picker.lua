@@ -31,6 +31,7 @@ local function current_lines(state, match, context)
 end
 
 local function previewer(state)
+-- TODO: Check if it is possible to refactor this function
   local result = require("telescope.previewers").new_buffer_previewer({
     title = "Replacement preview",
     define_preview = function(self, selected)
@@ -78,6 +79,7 @@ local function previewer(state)
         vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, out)
         local row, prefix = match.lnum - first, #(" " .. match.lnum .. " ")
         vim.api.nvim_buf_add_highlight(self.state.bufnr, preview_ns, "Search", row, prefix + match.start_byte, prefix + match.end_byte)
+        vim.schedule(function() pcall(vim.api.nvim_win_set_cursor, self.state.winid, { row + 1, 0 }) end)
         return
       end
       local computed, err = engine.compute(state.pattern, state.replacement, match, line, state.flags.global)
@@ -99,6 +101,7 @@ local function previewer(state)
       end
       vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, out)
       vim.bo[self.state.bufnr].filetype = "diff"
+      vim.schedule(function() pcall(vim.api.nvim_win_set_cursor, self.state.winid, { match.lnum, 0 }) end)
     end,
   })
   local preview = result.preview

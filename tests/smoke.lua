@@ -29,6 +29,9 @@ local function preview()
   local ok, lines = pcall(vim.api.nvim_buf_get_lines, bufnr, 0, -1, true)
   return ok and table.concat(lines, "\n") or ""
 end
+local function preview_cursor()
+  return vim.api.nvim_win_get_cursor(picker.previewer.state.winid)[1]
+end
 
 wait_for(function() return type(picker.manager) == "table" end, "picker initialization")
 wait_for(function()
@@ -41,6 +44,7 @@ picker:set_prompt("/foo")
 wait_for(function()
   return type(picker.manager) == "table" and picker.manager:num_results() == 1 and preview():find(" 2 foo foo", 1, true)
 end, "source preview")
+wait_for(function() return preview_cursor() == 2 end, "source preview cursor")
 picker:set_prompt("/foo/bar")
 wait_for(function()
   local text = preview()
@@ -48,6 +52,7 @@ wait_for(function()
     and text:find("+2 bar foo", 1, true)
     and text:find(" 3 after", 1, true)
 end, "whole-file single-occurrence diff")
+wait_for(function() return preview_cursor() == 2 end, "replacement preview cursor")
 picker:set_prompt("/foo/bar/g")
 wait_for(function() return preview():find("+2 bar bar", 1, true) end, "global diff")
 
