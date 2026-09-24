@@ -55,6 +55,7 @@ function M.attach(prompt_bufnr, state, changed)
       or parsed.flags.global ~= state.flags.global
       or parsed.parse_error ~= state.parse_error
     for key, value in pairs(parsed) do state[key] = value end
+    state.replacement, state.parse_error = parsed.replacement, parsed.parse_error
     if preview_changed then changed(pattern_changed) end
   end
   vim.api.nvim_buf_attach(prompt_bufnr, false, { on_lines = function() vim.schedule(sync) end })

@@ -36,6 +36,10 @@ local function previewer(state)
     title = "Replacement preview",
     define_preview = function(self, selected)
       vim.api.nvim_buf_clear_namespace(self.state.bufnr, preview_ns, 0, -1)
+      if state.parse_error then
+        vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, { "Prompt error:", state.parse_error })
+        return
+      end
       if state.mode == "idle" then
         local mappings = config.values.mappings.i
         vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, {
@@ -47,10 +51,6 @@ local function previewer(state)
           mappings.toggle_selection .. "  Toggle selection",
           mappings.replace_selected_or_all .. "  Replace selected occurrences, or all when none are selected",
         })
-        return
-      end
-      if state.parse_error then
-        vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, { "Prompt error:", state.parse_error })
         return
       end
       local match = selected and selected.value
@@ -198,6 +198,7 @@ function M.open(opts)
     prompt_title = "Search and replace — " .. cwd,
     prompt_prefix = "S/R: ",
     history = false,
+    selection_strategy = "row",
     finder = finders.new_table({ results = {} }),
     sorter = sorters.empty(),
     previewer = previewer(state),
