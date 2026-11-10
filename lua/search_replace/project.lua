@@ -5,10 +5,6 @@ local uv = vim.uv or vim.loop
 local scan_budget_ns = 1e6
 local progress_interval_ns = 30e6
 
-local function under(path, root)
-  return path == root or path:sub(1, #root + 1) == root .. "/"
-end
-
 local function add_file(state, filename)
   local record = state.files_by_name[filename]
   if record then return record end
@@ -16,17 +12,6 @@ local function add_file(state, filename)
   state.files_by_name[filename] = record
   state.files[#state.files + 1] = record
   return record
-end
-
-local function add_loaded_files(state)
-  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
-    local name = vim.api.nvim_buf_get_name(bufnr)
-    if name ~= "" then
-      name = vim.fs.normalize(name)
-      if under(name, state.cwd) then add_file(state, name) end
-    end
-  end
-  table.sort(state.files, function(a, b) return a.filename < b.filename end)
 end
 
 local function signature(stat)
@@ -85,6 +70,7 @@ local function command(config)
   if config.hidden then cmd[#cmd + 1] = "--hidden" end
   if config.ignored then cmd[#cmd + 1] = "--no-ignore" end
   for _, glob in ipairs(config.globs or {}) do vim.list_extend(cmd, { "--glob", glob }) end
+  vim.list_extend(cmd, config.args or {})
   return cmd, true
 end
 
@@ -147,7 +133,6 @@ local function flatten(state, limit)
 end
 
 local function scan(state, pattern, generation, done, progress, progress_limit)
-  add_loaded_files(state)
   for _, record in ipairs(state.files) do record.matches_by_line = {} end
   local next_file, active, finished, last_progress = 1, 0, false, 0
   local function alive() return not finished and generation == state.search_generation end
@@ -203,7 +188,7 @@ local function discover(state, config)
       state.discovery_pending, state.search_job = false, nil
       local waiter = state.discovery_waiter
       state.discovery_waiter = nil
-      if result.code ~= 0 then
+      if result.code ~= 0 and not (nul and result.code == 1 and result.stdout == "" and result.stderr == "") then
         if waiter and waiter.generation == state.search_generation then
           waiter.done({}, result.stderr ~= "" and result.stderr or "file discovery failed", waiter.generation)
         end

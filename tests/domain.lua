@@ -1,6 +1,20 @@
 local engine = require("search_replace.engine")
 local prompt = require("search_replace.prompt")
 local transaction = require("search_replace.transaction")
+local args = require("search_replace.args")
+local shared = require("editable-telescope.args")
+
+local flags = { "-g", "src files/*.lua", "--glob=!vendor/**", "--hidden", "--no-ignore", "-t", "lua",
+  "--iglob=*.LUA", "--max-depth", "3", "--max-filesize=1M", "-L", "--no-hidden", "--ignore", "-T", "json", "--no-follow" }
+assert(vim.deep_equal(args.parse(shared.format(flags)), flags))
+assert(vim.deep_equal(args.parse([[--glob="src files/*.lua" -g '!vendor/**' --hidden]]),
+  { "--glob=src files/*.lua", "-g", "!vendor/**", "--hidden" }))
+assert(vim.deep_equal(args.parse([[--glob src\ files/*.lua]]), { "--glob", "src files/*.lua" }))
+assert(vim.deep_equal(args.parse(shared.format({ "-g", "it's/*.lua" })), { "-g", "it's/*.lua" }))
+for _, input in ipairs({ "--json", "-i", "src", "--glob", "--glob --hidden", "--glob=", "--hidden=yes", [[-g 'unfinished]], "-g tail\\" }) do
+  local parsed_args, err = args.parse(input)
+  assert(not parsed_args and err, input)
+end
 
 local function parsed(text, expected)
   local actual = prompt.parse(text)

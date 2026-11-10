@@ -1,11 +1,13 @@
 local M = {}
 
 M.defaults = {
-  search = { debounce = 100, max_results = 5000, hidden = false, ignored = false, globs = {}, command = nil },
+  search = { debounce = 100, max_results = 5000, hidden = false, ignored = false, globs = {}, args = {}, command = nil },
   preview = { context = 3 },
   replace = { auto_save = false },
   mappings = {
     i = {
+      change_root = "<C-s>",
+      edit_search_args = "<C-a>",
       replace_current = "<CR>",
       toggle_selection = "<Tab>",
       replace_selected_or_all = "<C-R>",

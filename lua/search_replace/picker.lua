@@ -3,6 +3,7 @@ local engine = require("search_replace.engine")
 local project = require("search_replace.project")
 local prompt = require("search_replace.prompt")
 local transaction = require("search_replace.transaction")
+local args = require("search_replace.args")
 
 local M = {}
 local preview_ns = vim.api.nvim_create_namespace("search_replace_preview")
@@ -36,6 +37,10 @@ local function previewer(state)
     title = "Replacement preview",
     define_preview = function(self, selected)
       vim.api.nvim_buf_clear_namespace(self.state.bufnr, preview_ns, 0, -1)
+      if state.search_error then
+        vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, { "Search error:", state.search_error })
+        return
+      end
       if state.parse_error then
         vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, { "Prompt error:", state.parse_error })
         return
@@ -50,6 +55,8 @@ local function previewer(state)
           mappings.replace_current .. "  Replace current occurrence",
           mappings.toggle_selection .. "  Toggle selection",
           mappings.replace_selected_or_all .. "  Replace selected occurrences, or all when none are selected",
+          mappings.change_root .. "  Change search root",
+          mappings.edit_search_args .. "  Edit rg flags",
         })
         return
       end
@@ -111,16 +118,10 @@ local function previewer(state)
   return result
 end
 
-function M.open(opts)
-  if vim.fn.has("nvim-0.10") == 0 then error("search-replace.nvim requires Neovim 0.10+") end
-  local ok = pcall(require, "telescope")
-  if not ok then error("search-replace.nvim requires telescope.nvim") end
-  if vim.fn.executable("rg") == 0 and not config.values.search.command then
-    error("search-replace.nvim requires rg for file discovery")
-  end
-
-  opts = opts or {}
-  local cwd = vim.fs.normalize(opts.cwd or vim.uv.cwd())
+local function open(opts, search_config, editor)
+  search_config = vim.tbl_extend("force", {}, search_config, { args = editor.cmd_args })
+  local arg_error = editor.cmd_args_error
+  local cwd = vim.fs.normalize(vim.fn.fnamemodify(opts.cwd or vim.uv.cwd(), ":p"))
   if vim.fn.isdirectory(cwd) == 0 then error("invalid cwd: " .. cwd) end
   local state = {
     pattern = "",
@@ -135,6 +136,7 @@ function M.open(opts)
     files = {},
     files_by_name = {},
     cwd = cwd,
+    search_error = arg_error,
   }
   local pickers = require("telescope.pickers")
   local finders = require("telescope.finders")
@@ -151,7 +153,7 @@ function M.open(opts)
   local function refresh_results()
     if active() and vim.api.nvim_buf_is_valid(picker.prompt_bufnr) then
       local displayed = state.search_error and { { error = state.search_error, id = state.search_error } } or state.matches
-      displayed = vim.list_slice(displayed, 1, config.values.search.max_results)
+      displayed = vim.list_slice(displayed, 1, search_config.max_results)
       picker:refresh(finders.new_table({ results = displayed, entry_maker = function(m) return entry(m, cwd) end }), { reset_prompt = false })
     end
   end
@@ -159,8 +161,15 @@ function M.open(opts)
     if active() then picker:refresh_previewer() end
   end
   local function search()
+    if not active() then return end
+    if arg_error then
+      state.matches, state.search_error, state.searching = {}, arg_error, false
+      refresh_results()
+      refresh_preview()
+      return
+    end
     state.searching = true
-    project.search(state, config.values.search, function(matches, err, generation)
+    project.search(state, search_config, function(matches, err, generation)
       if generation ~= state.search_generation then return end
       state.matches, state.search_error, state.searching = matches, err, false
       refresh_results()
@@ -173,10 +182,11 @@ function M.open(opts)
   local function schedule_search()
     timer:stop()
     state.search_generation = state.search_generation + 1
-    timer:start(config.values.search.debounce, 0, vim.schedule_wrap(search))
+    timer:start(search_config.debounce, 0, vim.schedule_wrap(search))
   end
   local function apply(matches)
     if state.mode ~= "replace" or state.parse_error then return end
+    if state.search_error then return end
     if state.searching then return vim.notify("search still in progress", vim.log.levels.INFO) end
     if not matches or #matches == 0 then return end
     local result = transaction.run(matches, state.pattern, state.replacement, state.flags.global)
@@ -194,8 +204,9 @@ function M.open(opts)
     end
   end
 
-  picker = pickers.new(opts, {
-    prompt_title = "Search and replace — " .. cwd,
+  local picker_opts = vim.tbl_extend("force", {}, opts, { cwd = cwd })
+  picker_opts.attach_mappings = nil
+  picker = pickers.new(picker_opts, {
     prompt_prefix = "S/R: ",
     history = false,
     selection_strategy = "row",
@@ -222,10 +233,16 @@ function M.open(opts)
         for _, item in ipairs(selected) do targets[#targets + 1] = item.value end
         apply(transaction.targets(state.matches, targets))
       end)
-      return true
+      return not opts.attach_mappings or opts.attach_mappings(prompt_bufnr, map)
     end,
   })
   picker:find()
+  if arg_error then
+    vim.schedule(function()
+      refresh_results()
+      refresh_preview()
+    end)
+  end
   vim.api.nvim_create_autocmd("BufWipeout", {
     buffer = picker.prompt_bufnr,
     once = true,
@@ -234,6 +251,47 @@ function M.open(opts)
       timer:close()
       project.cancel(state)
     end,
+  })
+end
+
+function M.open(opts)
+  if vim.fn.has("nvim-0.10") == 0 then error("search-replace.nvim requires Neovim 0.10+") end
+  local ok, telescope = pcall(require, "telescope")
+  if not ok then error("search-replace.nvim requires telescope.nvim") end
+  opts = opts or {}
+  local search_config = vim.tbl_deep_extend("force", vim.deepcopy(config.values.search), opts.search or {})
+  for _, key in ipairs({ "args", "globs", "command" }) do
+    if opts.search and opts.search[key] ~= nil then search_config[key] = vim.deepcopy(opts.search[key]) end
+  end
+  if vim.fn.executable("rg") == 0 and not search_config.command then
+    error("search-replace.nvim requires rg for file discovery")
+  end
+  local shared = require("editable-telescope.args")
+  local cwd = vim.fs.normalize(vim.fn.fnamemodify(opts.cwd or vim.uv.cwd(), ":p"))
+  if vim.fn.isdirectory(cwd) == 0 then error("invalid cwd: " .. cwd) end
+  local mappings = config.values.mappings.i
+  telescope.extensions.editable.editable_picker({
+    picker_opts = opts,
+    initial_state = {
+      cwd = cwd,
+      cmd_args = search_config.args,
+      cmd_args_text = shared.format(search_config.args),
+      cmd_args_error = args.validate(search_config.args),
+    },
+    mappings = { change_root = mappings.change_root, edit_grep_args = mappings.edit_search_args },
+    cmd_args_prompt = "rg flags: ",
+    parse_cmd_args = function(input)
+      if search_config.command then
+        if input ~= "" then return nil, "rg flags are unavailable with a custom discovery command" end
+        return search_config.args
+      end
+      return args.parse(input)
+    end,
+    format_cmd_args = function(_, editor) return editor.cmd_args_text end,
+    prompt_title = function(editor)
+      return "Search and replace — " .. vim.fs.normalize(editor.cwd) .. " [" .. editor.cmd_args_text .. "]"
+    end,
+    open = function(editor, picker_opts) open(picker_opts, search_config, editor) end,
   })
 end
 
