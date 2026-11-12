@@ -1,7 +1,7 @@
 local engine = require("search_replace.engine")
 
 local M = {}
-local uv = vim.uv or vim.loop
+local uv = vim.uv
 local scan_budget_ns = 1e6
 local progress_interval_ns = 30e6
 

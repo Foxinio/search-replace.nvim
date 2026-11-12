@@ -42,7 +42,6 @@ require("search_replace").setup({
     -- command = { "my-file-lister" }, -- newline-delimited output
   },
   preview = { context = 3 },
-  replace = { auto_save = false },
   mappings = {
     i = {
       replace_current = "<CR>",

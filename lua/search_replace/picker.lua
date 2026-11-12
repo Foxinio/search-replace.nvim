@@ -76,7 +76,8 @@ local function previewer(state)
         lines, first = project.lines(state, match.filename), 1
       end
       if not lines then
-        vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, { first })
+        local reason = state.mode == "search" and first or "missing cached file"
+        vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, { "Preview unavailable: " .. reason })
         return
       end
       local line = lines[match.lnum - first + 1]
@@ -85,7 +86,8 @@ local function previewer(state)
         for index, text in ipairs(lines) do out[index] = (" %d %s"):format(first + index - 1, text) end
         vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, out)
         local row, prefix = match.lnum - first, #(" " .. match.lnum .. " ")
-        vim.api.nvim_buf_add_highlight(self.state.bufnr, preview_ns, "Search", row, prefix + match.start_byte, prefix + match.end_byte)
+        pcall(vim.api.nvim_buf_set_extmark, self.state.bufnr, preview_ns, row, prefix + match.start_byte,
+          { end_col = prefix + match.end_byte, hl_group = "Search" })
         vim.schedule(function() pcall(vim.api.nvim_win_set_cursor, self.state.winid, { row + 1, 0 }) end)
         return
       end
