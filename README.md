@@ -130,10 +130,12 @@ Buffers remain modified and are never automatically written.
 - Binary disk files are ignored. Multiline patterns (literal newlines or `\_`
   atoms) are rejected in this release. Replacement `\r` may create lines.
 
-Run domain tests with `make test`, discovery tests with `make integration`, and
-Telescope UI checks with `make smoke` (Telescope and Plenary in the standard lazy
-data directory). Tests also load editable-telescope from that directory; set
-`EDITABLE_TELESCOPE_PATH` to test against a different checkout, for example:
+Run domain tests with `make test`, discovery tests with `make integration`,
+Telescope UI checks with `make smoke`, or all of them with `make check`.
+Dependencies (Telescope, Plenary, editable-telescope) load from lazy.nvim's
+plugin directory, or from `DEPS_DIR` (`make deps check DEPS_DIR=.deps` clones
+them, as CI does). Set `EDITABLE_TELESCOPE_PATH` to test against a different
+editable-telescope checkout, for example:
 
 ```sh
 EDITABLE_TELESCOPE_PATH=../editable-telescope.nvim make test integration smoke
