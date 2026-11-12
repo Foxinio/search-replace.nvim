@@ -66,11 +66,11 @@ end
 
 local function command(config)
   if config.command then return vim.deepcopy(config.command), false end
-  local cmd = { "rg", "--files", "--null" }
-  if config.hidden then cmd[#cmd + 1] = "--hidden" end
-  if config.ignored then cmd[#cmd + 1] = "--no-ignore" end
-  for _, glob in ipairs(config.globs or {}) do vim.list_extend(cmd, { "--glob", glob }) end
-  vim.list_extend(cmd, config.args or {})
+  local globs = {}
+  for _, glob in ipairs(config.globs or {}) do vim.list_extend(globs, { "--glob", glob }) end
+  local cmd = require("editable-telescope.args").build(
+    { hidden = config.hidden, no_ignore = config.ignored, additional_args = globs },
+    config.args or {}, { "rg", "--files", "--null" })
   return cmd, true
 end
 

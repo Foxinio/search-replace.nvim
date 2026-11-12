@@ -121,8 +121,8 @@ end
 local function open(opts, search_config, editor)
   search_config = vim.tbl_extend("force", {}, search_config, { args = editor.cmd_args })
   local arg_error = editor.cmd_args_error
-  local cwd = vim.fs.normalize(vim.fn.fnamemodify(opts.cwd or vim.uv.cwd(), ":p"))
-  if vim.fn.isdirectory(cwd) == 0 then error("invalid cwd: " .. cwd) end
+  -- editable-telescope hands over an already normalized root.
+  local cwd = opts.cwd
   local state = {
     pattern = "",
     search_pattern = "",
@@ -254,6 +254,21 @@ local function open(opts, search_config, editor)
   })
 end
 
+-- Minimum editable-telescope: the release providing editable_picker,
+-- args.format, strict args.split and args.normalize_root.
+function M.editable_telescope()
+  local ok, shared = pcall(require, "editable-telescope.args")
+  local ext_ok, ext = pcall(function() return require("telescope").extensions.editable end)
+  if not ok or not ext_ok or type(ext) ~= "table" then
+    error("search-replace.nvim requires Foxinio/editable-telescope.nvim")
+  end
+  if type(shared.format) ~= "function" or type(shared.normalize_root) ~= "function"
+    or type(ext.editable_picker) ~= "function" then
+    error("search-replace.nvim requires a newer editable-telescope.nvim (editable_picker, args.normalize_root)")
+  end
+  return shared
+end
+
 function M.open(opts)
   if vim.fn.has("nvim-0.10") == 0 then error("search-replace.nvim requires Neovim 0.10+") end
   local ok, telescope = pcall(require, "telescope")
@@ -266,9 +281,9 @@ function M.open(opts)
   if vim.fn.executable("rg") == 0 and not search_config.command then
     error("search-replace.nvim requires rg for file discovery")
   end
-  local shared = require("editable-telescope.args")
-  local cwd = vim.fs.normalize(vim.fn.fnamemodify(opts.cwd or vim.uv.cwd(), ":p"))
-  if vim.fn.isdirectory(cwd) == 0 then error("invalid cwd: " .. cwd) end
+  local shared = M.editable_telescope()
+  local cwd, cwd_err = shared.normalize_root(opts.cwd)
+  if not cwd then error(cwd_err) end
   local mappings = config.values.mappings.i
   telescope.extensions.editable.editable_picker({
     picker_opts = opts,
@@ -276,9 +291,9 @@ function M.open(opts)
       cwd = cwd,
       cmd_args = search_config.args,
       cmd_args_text = shared.format(search_config.args),
-      cmd_args_error = args.validate(search_config.args),
+      cmd_args_error = not search_config.command and args.validate(search_config.args) or nil,
     },
-    mappings = { change_root = mappings.change_root, edit_grep_args = mappings.edit_search_args },
+    mappings = { change_root = mappings.change_root, edit_args = mappings.edit_search_args },
     cmd_args_prompt = "rg flags: ",
     parse_cmd_args = function(input)
       if search_config.command then

@@ -1,4 +1,3 @@
-local shared = require("editable-telescope.args")
 local M = {}
 
 local values = { g = true, glob = true, iglob = true, t = true, type = true,
@@ -7,7 +6,7 @@ local switches = { hidden = true, ["no-hidden"] = true, ["no-ignore"] = true,
   ignore = true, L = true, follow = true, ["no-follow"] = true }
 
 function M.parse(input)
-  local args, err = shared.split(input, true)
+  local args, err = require("editable-telescope.args").split(input, true)
   if not args then return nil, err end
   err = M.validate(args)
   if err then return nil, err end

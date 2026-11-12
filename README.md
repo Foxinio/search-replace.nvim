@@ -9,7 +9,9 @@ Neovim substitution operation.
 - Neovim 0.10+
 - [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim)
 - [editable-telescope.nvim](https://github.com/foxinio/editable-telescope.nvim),
-  including its shared picker state and strict argument parsing APIs
+  with `editable_picker`, strict `args.split`, `args.format` and
+  `args.normalize_root`. Opening the picker reports a clear error when
+  editable-telescope is missing or too old.
 - `rg` for ignore-aware file discovery only (a custom command may replace it)
 
 ## Setup
