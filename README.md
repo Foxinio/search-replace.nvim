@@ -9,7 +9,9 @@ Neovim substitution operation.
 - Neovim 0.10+
 - [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim)
 - [editable-telescope.nvim](https://github.com/foxinio/editable-telescope.nvim),
-  including its shared picker state and strict argument parsing APIs
+  with `editable_picker`, strict `args.split`, `args.format` and
+  `args.normalize_root`. Opening the picker reports a clear error when
+  editable-telescope is missing or too old.
 - `rg` for ignore-aware file discovery only (a custom command may replace it)
 
 ## Setup
@@ -40,7 +42,6 @@ require("search_replace").setup({
     -- command = { "my-file-lister" }, -- newline-delimited output
   },
   preview = { context = 3 },
-  replace = { auto_save = false },
   mappings = {
     i = {
       replace_current = "<CR>",
@@ -129,10 +130,12 @@ Buffers remain modified and are never automatically written.
 - Binary disk files are ignored. Multiline patterns (literal newlines or `\_`
   atoms) are rejected in this release. Replacement `\r` may create lines.
 
-Run domain tests with `make test`, discovery tests with `make integration`, and
-Telescope UI checks with `make smoke` (Telescope and Plenary in the standard lazy
-data directory). Tests also load editable-telescope from that directory; set
-`EDITABLE_TELESCOPE_PATH` to test against a different checkout, for example:
+Run domain tests with `make test`, discovery tests with `make integration`,
+Telescope UI checks with `make smoke`, or all of them with `make check`.
+Dependencies (Telescope, Plenary, editable-telescope) load from lazy.nvim's
+plugin directory, or from `DEPS_DIR` (`make deps check DEPS_DIR=.deps` clones
+them, as CI does). Set `EDITABLE_TELESCOPE_PATH` to test against a different
+editable-telescope checkout, for example:
 
 ```sh
 EDITABLE_TELESCOPE_PATH=../editable-telescope.nvim make test integration smoke

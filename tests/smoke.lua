@@ -1,8 +1,3 @@
-local data = vim.fn.stdpath("data") .. "/lazy/"
-vim.opt.runtimepath:prepend(data .. "plenary.nvim")
-vim.opt.runtimepath:prepend(data .. "telescope.nvim")
-
-require("telescope").setup({})
 vim.o.columns = 160
 local root = vim.fn.tempname()
 vim.fn.mkdir(root, "p")

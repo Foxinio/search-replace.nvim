@@ -79,7 +79,8 @@ end
 
 function M.run(matches, pattern, replacement, global)
   local operations, failures = M.plan(matches, pattern, replacement, global)
-  if not operations then return { applied = 0, stale = 0, failed = #matches, error = failures } end
+  -- On overlapping matches plan() returns nil and an error message.
+  if not operations then return { applied = 0, stale = 0, failed = #matches, error = failures --[[@as string]] } end
   local applied, failed, changes = M.apply(operations)
   return { applied = applied, stale = #failures, failed = failed, details = failures, changes = changes }
 end

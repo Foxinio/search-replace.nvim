@@ -3,7 +3,6 @@ local M = {}
 M.defaults = {
   search = { debounce = 100, max_results = 5000, hidden = false, ignored = false, globs = {}, args = {}, command = nil },
   preview = { context = 3 },
-  replace = { auto_save = false },
   mappings = {
     i = {
       change_root = "<C-s>",

@@ -1,3 +1,9 @@
+-- Assertions inside async callbacks don't stop a headless run; fail instead of hanging.
+vim.defer_fn(function()
+  io.stderr:write("integration test timed out (an assertion in a callback probably failed)\n")
+  vim.cmd("cquit 1")
+end, 30000)
+
 local engine = require("search_replace.engine")
 local project = require("search_replace.project")
 local transaction = require("search_replace.transaction")
